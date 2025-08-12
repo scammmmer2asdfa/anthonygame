@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html><head>
+
+    <link rel="apple-touch-icon" sizes="180x180" href="images/favicons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="images/favicons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="images/favicons/favicon-16x16.png">
+    <link rel="manifest" href="images/favicons/site.webmanifest">
+    <link rel="mask-icon" href="images/favicons/safari-pinned-tab.svg" color="#00b0ff">
+    <link rel="shortcut icon" href="images/favicons/favicon.ico">
+    <meta name="msapplication-TileColor" content="#00b0ff">
+    <meta name="msapplication-config" content="images/favicons/browserconfig.xml">
+    <meta name="theme-color" content="#00b0ff">
+
+    <base href="">
+
+    <meta charset="utf-8">
+    <meta name="viewport" content="user-scalable=no,  initial-scale=1,  maximum-scale=1,  width=device-width">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color:rgba(0,0,0,0);
+        }
+
+        html, body {
+            margin: 0 auto;
+            padding: 0;
+            background: #000000;
+            width: 100%;
+            height: 100%;
+        }
+
+        #code-camp-world-game {
+            position: absolute;
+            overflow: hidden;
+        }
+
+        #code-camp-world-game.type3d {
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+        }
+
+        #code-camp-world-game.type2d {
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        #code-camp-world-game.type2d canvas {
+            /* ensure the canvas is always non-zero sized */
+            min-width: 1px;
+            min-height: 1px;
+        }
+
+
+        #progress-bar-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 30px;
+            border-color: white;
+            border-style: solid;
+            border-width: 3px;
+        }
+
+        #progress-bar {
+            background-color: white;
+            width: 0%;
+            height: 100%;
+        }
+
+        @font-face {
+            font-family: 'SimianTextChimpanzee';
+            src: url("https://resources.codecamp.com.au/site-new/assets/fonts/simtchim.woff2") format("woff2"), url("https://resources.codecamp.com.au/site-new/assets/fonts/simtchim.woff") format("woff");
+        }
+
+    </style>
+
+    <title>towers of bobthecat</title>
+
+
+<style id="injected"></style></head>
+
+<body>
+
+<div id="code-camp-world-game" class="type2d">
+    
+<canvas width="629" height="320" style="display: block; touch-action: none; user-select: none; -webkit-tap-highlight-color: rgba(0, 0, 0, 0); width: 629px; height: 320px; cursor: inherit;"></canvas></div>
+
+<script>
+
+    var queryParams = function () {
+        // This function is anonymous, is executed immediately and
+        // the return value is assigned to queryParams!
+        var query_string = {};
+        var query = window.location.search.substring(1);
+        var vars = query.split("&");
+        for (var i=0;i<vars.length;i++) {
+            var pair = vars[i].split("=");
+            // If first entry with this name
+            if (typeof query_string[pair[0]] === "undefined") {
+                query_string[pair[0]] = decodeURIComponent(pair[1]);
+                // If second entry with this name
+            } else if (typeof query_string[pair[0]] === "string") {
+                var arr = [ query_string[pair[0]],decodeURIComponent(pair[1]) ];
+                query_string[pair[0]] = arr;
+                // If third or later entry with this name
+            } else {
+                query_string[pair[0]].push(decodeURIComponent(pair[1]));
+            }
+        }
+        return query_string;
+    }();
+
+    var getJSON = function(url, callback) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'json';
+        xhr.json = true;
+        xhr.onload = function() {
+            var status = xhr.status;
+            if (status == 200) {
+                callback(null, xhr.response);
+            } else {
+                callback(status);
+            }
+        };
+        xhr.send();
+    };
+
+    var loadAsset = function(baseUrl, asset, successCallback, failureCallback, location){
+        //url is URL of external file, implementationCode is the code
+        //to be called from the file, location is the location to
+        //insert the <script> element
+        var url = baseUrl + asset.path;
+        if( asset.type == "javascript" ) {
+            var scriptTag = document.createElement('script');
+            scriptTag.src = url;
+
+            scriptTag.onload = successCallback;
+            scriptTag.onreadystatechange = successCallback;
+            scriptTag.onerror = function(err) {
+                failureCallback(url, err);
+            };
+
+
+            location.appendChild(scriptTag);
+        } else if( asset.type == 'implicit-binary' || asset.type =='implicit-asset' ) {
+            // ignore asset, it's part of the game engine (probably an image)
+            successCallback();
+        } else {
+            failureCallback(url, "unsupported asset type: "+asset.type);
+        }
+
+    };
+
+    var progressBarContainer = document.getElementById('progress-bar-container');
+    var progressBar = document.getElementById('progress-bar');
+    function displayProgress(progress) {
+        progressBar.setAttribute('style', 'width: '+Math.floor(100 * progress)+'%');
+    }
+
+    displayProgress(0);
+
+    // game variable must be globally visible, otherwise 2d games wont work!
+    var game = null;
+    var container = null;
+
+    var base = queryParams.base;
+    if( base == null ) {
+        base = '';
+    }
+
+    getJSON(base + '/' + queryParams.game + '/game.json',
+        function (err, data) {
+            if (err != null) {
+                alert('Something went wrong loading this game: ' + err);
+            } else {
+                displayProgress(0.15);
+                if (typeof data === 'string') {
+                    data = JSON.parse(data);
+                }
+                var version = data.gameEngineVersion;
+                var type = data.gameEngineType;
+                if( type == null ) {
+                    type = '2d';
+                }
+
+                var containerId = 'code-camp-world-game';
+                container = document.getElementById(containerId);
+                container.setAttribute('class', 'type'+type);
+
+                var currentFolderURL = window.location.href;
+                var queryIndex = currentFolderURL.lastIndexOf('?');
+                if( queryIndex >= 0 ) {
+                    currentFolderURL = currentFolderURL.substr(0, queryIndex);
+                }
+                var slashIndex = currentFolderURL.lastIndexOf('/');
+                if( slashIndex >= 0 ) {
+                    currentFolderURL = currentFolderURL.substring(0, slashIndex);
+                }
+                var versionPath = currentFolderURL;
+                // if we are being run from within our own folder (usually just for test purposes), then do not append version
+                var lastIndex = versionPath.lastIndexOf(version);
+                if( lastIndex < 0 || lastIndex != (versionPath.length - version.length) ) {
+                    versionPath += '/gamecoder';
+                    // for legacy reasons, we don't want to go to a subfolder for 2d
+                    if( type != '2d' ) {
+                        versionPath += type;
+                    }
+                    versionPath += '/' + version;
+                }
+                versionPath += '/';
+
+                var baseAssetCdnUrl = currentFolderURL + '/assets';
+
+                getJSON(versionPath + 'manifest.json', function(err, assetData) {
+                    if (err != null) {
+                        alert('Unsupported game version (' + version + '): ' + err);
+                    } else {
+                        displayProgress(0.25);
+                        if (typeof assetData === 'string') {
+                            assetData = JSON.parse(assetData);
+                        }
+                        var assets = assetData.assets;
+                        if (assets) {
+                            var assetCount = 0;
+                            var assetFailed = function (assetURL, err) {
+                                alert('asset failed to load: ' + assetURL + (err ? ' ' + err : ''));
+                            };
+                            var assetLoaded = function () {
+                                displayProgress(0.25 + (0.25 * assetCount) / assets.length);
+                                if (assetCount === assets.length) {
+                                    // assume same entry point for all versions
+                                    var progressCallback = function(progress, done) {
+                                        displayProgress(0.5 + progress * 0.5);
+                                        if( done ) {
+                                            setTimeout(function() {
+                                                if( progressBarContainer.parentNode != null) {
+                                                    progressBarContainer.parentNode.removeChild(progressBarContainer);
+                                                }
+                                            }, 100);
+                                        }
+                                    };
+
+                                    if( type === '3d' ) {
+
+                                        var options = {
+                                            enableShadows: true,
+                                            baseAssetCdnUrl: baseAssetCdnUrl,
+                                            progressHandler: progressCallback,
+                                            forceVirtualReality: false,
+                                            autoAllowAugmentedReality: queryParams.AR
+                                        };
+                                        var instance = ccw3d.launch(data, containerId, options);
+                                        window.onunload = function () {
+                                            // not really neccessary (the browser will do this by destroying the entire process anyway), but this demonstrates how we can clean up the game
+                                            instance.destroy();
+                                        };
+
+                                    } else {
+                                        // assume same entry point for all versions
+                                        game = new CodeCampWorldGame(data, progressCallback);
+                                        game.cacheVersion = Date.now();
+                                        if (queryParams.w && queryParams.h) {
+                                            setDimensions(queryParams.w, queryParams.h);
+                                        }
+                                        game.start(containerId);
+                                    }
+                                } else {
+                                    var asset = assets[assetCount];
+                                    assetCount++;
+                                    loadAsset(versionPath, asset, assetLoaded, assetFailed, document.body);
+                                }
+                            };
+                            // kick it off
+                            assetLoaded();
+                        }
+                    }
+                });
+            }
+        });
+
+    function setDimensions(width, height) {
+        if( width && height) {
+            container.style.width =  width + 'px';
+            container.style.height = height + 'px';
+            game.setFillWindow(container);
+        } else {
+            game.viewPortWidth = undefined;
+            game.viewPortHeight = undefined;
+            game.viewPortFixed = false;
+            container.removeAttr('style');
+            game.setFillWindow(false);
+        }
+        game._sizeToFit();
+    }
+</script>
+
+
+
+<script src="https://play.codecampworld.com/gamecoder/1.0.0/lib/phaser/phaser.min.js"></script><script src="https://play.codecampworld.com/gamecoder/1.0.0/lib/phaser/box2d-plugin-full.min.js"></script><script src="https://play.codecampworld.com/gamecoder/1.0.0/js/code-camp-game-coder.min.js"></script></body></html>
